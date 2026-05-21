@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trung Anh – AI Assistant</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div class="page-bg">
+    <div class="chat-wrapper">
+
+      <!-- Header -->
+      <div class="chat-header">
+        <div class="header-left">
+          <div class="bot-avatar">TA</div>
+          <div class="header-info">
+            <h2 class="bot-name">Trung Anh</h2>
+            <span class="bot-status"><span class="dot"></span> Trực tuyến</span>
+          </div>
+        </div>
+        <div class="header-right">
+          <span class="powered-by">Powered by Gemini AI</span>
+        </div>
+      </div>
+
+      <!-- Messages -->
+      <div class="chat-messages" id="chatMessages">
+        <div class="message bot">
+          <div class="msg-avatar">TA</div>
+          <div class="msg-body">
+            <div class="msg-bubble">
+              Xin chào! 👋 Tôi là <strong>Trung Anh</strong>, trợ lý AI của <strong>Trần Quang Minh</strong>.<br /><br />
+              Tôi có thể giúp bạn tìm hiểu về kỹ năng, kinh nghiệm và các dự án của anh ấy.<br /><br />
+              Bạn muốn biết điều gì?
+            </div>
+            <div class="msg-time">Vừa xong</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick replies -->
+      <div class="quick-replies" id="quickReplies">
+        <button class="qr-btn" onclick="sendQuick('Kỹ năng của bạn là gì?')">💻 Kỹ năng</button>
+        <button class="qr-btn" onclick="sendQuick('Kinh nghiệm làm việc')">💼 Kinh nghiệm</button>
+        <button class="qr-btn" onclick="sendQuick('Các dự án đã làm')">🚀 Dự án</button>
+        <button class="qr-btn" onclick="sendQuick('Thông tin liên hệ')">📧 Liên hệ</button>
+        <button class="qr-btn" onclick="sendQuick('Giới thiệu về bản thân')">👤 Giới thiệu</button>
+      </div>
+
+      <!-- Input -->
+      <div class="chat-input-area">
+        <input
+          type="text"
+          id="msgInput"
+          placeholder="Nhập tin nhắn..."
+          autocomplete="off"
+          onkeydown="if(event.key==='Enter') sendMessage()"
+        />
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+</body>
+</html>
