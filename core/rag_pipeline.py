@@ -1,79 +1,67 @@
 """
-RAG Pipeline: Document chunking (LangChain) + Hybrid retrieval + Gemini streaming generation.
+RAG Pipeline: LangChain chunking + Hybrid retrieval + Gemini streaming.
+Tích hợp: Conversation Memory, Prompt Templates, Evaluation Metrics.
 """
 
 import asyncio
 import queue
+import time
 import threading
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional
 
 import google.generativeai as genai
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from core.config import settings
+from core.evaluator import ResponseMetrics, Timer, evaluator
 from core.hybrid_retriever import retriever
+from core.memory import memory_store
+from core.prompts import build_rag_prompt, get_prompt
 
 genai.configure(api_key=settings.gemini_api_key)
 
 _splitter = RecursiveCharacterTextSplitter(
     chunk_size=settings.chunk_size,
     chunk_overlap=settings.chunk_overlap,
-    separators=["\n\n", "\n", ".", "!", "?", "。", " ", ""],
+    separators=["\n\n", "\n", ".", "!", "?", " ", ""],
 )
-
-_SYSTEM_PROMPT = """Bạn là trợ lý AI thông minh chuyên phân tích và trả lời câu hỏi từ tài liệu.
-
-Quy tắc:
-- Trả lời HOÀN TOÀN dựa trên ngữ cảnh tài liệu được cung cấp
-- Nếu không tìm thấy thông tin, thành thật nói: "Tài liệu không có thông tin này."
-- Trả lời bằng ngôn ngữ của người dùng (Tiếng Việt hoặc English)
-- Sử dụng markdown: **bold**, bullet points, bảng khi phù hợp
-- Trích dẫn tên file nguồn nếu cần thiết"""
 
 
 def index_document(text: str, doc_id: str, filename: str) -> int:
-    """Split text into chunks and add to vector store."""
     chunks = _splitter.split_text(text)
     retriever.add_chunks(
         [
-            {
-                "text": chunk,
-                "meta": {"doc_id": doc_id, "filename": filename, "chunk_idx": i},
-            }
-            for i, chunk in enumerate(chunks)
+            {"text": c, "meta": {"doc_id": doc_id, "filename": filename, "chunk_idx": i}}
+            for i, c in enumerate(chunks)
         ]
     )
     return len(chunks)
 
 
-async def rag_stream(query: str) -> AsyncIterator[str]:
-    """Retrieve relevant chunks and stream Gemini response."""
+async def rag_stream(
+    query: str,
+    session_id: str = "default",
+    provider: str = "gemini",
+    prompt_name: str = "rag_vi",
+) -> AsyncIterator[str]:
+    """Stream RAG response với memory + prompt management + evaluation."""
+    t_start = time.perf_counter()
+
     docs = retriever.search(query, k=settings.max_context_docs)
 
     if not docs:
-        yield "⚠️ Chưa có tài liệu nào trong hệ thống. Hãy upload tài liệu trước khi đặt câu hỏi."
+        yield "⚠️ Chưa có tài liệu nào. Hãy upload tài liệu trước khi đặt câu hỏi."
         return
 
-    context_parts = []
-    for d in docs:
-        meta = d["meta"]
-        context_parts.append(
-            f"**[{meta['filename']} — Đoạn {meta['chunk_idx'] + 1}]**\n{d['text']}"
-        )
-    context = "\n\n---\n\n".join(context_parts)
+    context = "\n\n---\n\n".join(
+        f"**[{d['meta']['filename']} — Chunk {d['meta']['chunk_idx'] + 1}]**\n{d['text']}"
+        for d in docs
+    )
 
-    prompt = f"""{_SYSTEM_PROMPT}
+    history_ctx = memory_store.as_context_string(session_id)
+    prompt = build_rag_prompt(query, context, prompt_name, history_ctx)
 
----
-**Ngữ cảnh từ tài liệu:**
-
-{context}
-
----
-**Câu hỏi:** {query}
-
-**Trả lời:**"""
-
+    answer_buf = ""
     result_q: queue.Queue = queue.Queue()
 
     def _run_gemini() -> None:
@@ -94,4 +82,25 @@ async def rag_stream(query: str) -> AsyncIterator[str]:
         text = await loop.run_in_executor(None, result_q.get)
         if text is None:
             break
+        answer_buf += text
         yield text
+
+    # Update memory
+    memory_store.add(session_id, "user", query)
+    memory_store.add(session_id, "assistant", answer_buf[:500])
+
+    # Log evaluation metrics
+    elapsed_ms = round((time.perf_counter() - t_start) * 1000)
+    evaluator.log(
+        ResponseMetrics(
+            session_id=session_id,
+            mode="rag",
+            provider=provider,
+            prompt_name=prompt_name,
+            query_len=len(query),
+            docs_retrieved=len(docs),
+            retrieval_scores=[],
+            token_estimate=len(answer_buf) // 4,
+            latency_ms=elapsed_ms,
+        )
+    )
